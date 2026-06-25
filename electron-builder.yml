@@ -1,0 +1,19 @@
+appId: com.golden.track
+productName: GoldenTrack
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - build/**/*
+win:
+  icon: doc/img/GoldenTrack-Logo.png
+  target:
+    - nsis
+  artifactName: ${productName}-${version}-setup.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: GoldenTrack
+extraResources:
+  - from: doc/img/GoldenTrack-Logo.png
+    to: icon.png
