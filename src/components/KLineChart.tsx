@@ -1,5 +1,5 @@
-import { useMemo } from 'react'
-import ReactECharts from 'echarts-for-react'
+import { useEffect, useRef } from 'react'
+import * as echarts from 'echarts'
 import type { KLineItem } from '@/types'
 
 export default function KLineChart({
@@ -9,7 +9,38 @@ export default function KLineChart({
   data: KLineItem[]
   loading: boolean
 }) {
-  const option = useMemo(() => buildOption(data), [data])
+  const containerRef = useRef<HTMLDivElement>(null)
+  const chartRef = useRef<echarts.ECharts | null>(null)
+  const initRef = useRef(false)
+
+  useEffect(() => {
+    if (!containerRef.current || data.length === 0) return
+
+    if (!initRef.current) {
+      initRef.current = true
+      const instance = echarts.init(containerRef.current)
+      chartRef.current = instance
+
+      const ro = new ResizeObserver(() => instance.resize())
+      ro.observe(containerRef.current)
+
+      // 首次渲染：dataZoom 指定 start/end 初始为全量
+      instance.setOption(buildOption(data))
+
+      return () => {
+        ro.disconnect()
+        instance.dispose()
+        chartRef.current = null
+        initRef.current = false
+      }
+    }
+
+    // 仅在数据引用变化且非首次时更新；不传 start/end 以保留用户缩放
+    const inst = chartRef.current
+    if (inst) {
+      inst.setOption(buildOption(data), { notMerge: false })
+    }
+  }, [data])
 
   if (loading && data.length === 0) {
     return <div className="loading">加载K线数据…</div>
@@ -18,13 +49,7 @@ export default function KLineChart({
     return <div className="loading">无K线数据</div>
   }
 
-  return (
-    <ReactECharts
-      option={option}
-      style={{ height: '100%', width: '100%' }}
-      notMerge
-    />
-  )
+  return <div ref={containerRef} style={{ height: '100%', width: '100%' }} />
 }
 
 function buildOption(data: KLineItem[]) {
@@ -39,13 +64,17 @@ function buildOption(data: KLineItem[]) {
     animation: false,
     tooltip: {
       trigger: 'axis',
+      triggerOn: 'click',
       axisPointer: { type: 'cross' },
       valueFormatter: (v: number) => (v == null ? '-' : v.toFixed(2))
     },
-    axisPointer: { link: [{ xAxisIndex: 'all' }] },
+    axisPointer: {
+      link: [{ xAxisIndex: 'all' }],
+      triggerOn: 'click'
+    },
     grid: [
-      { left: 60, right: 30, top: 16, height: '60%' },
-      { left: 60, right: 30, top: '76%', height: '16%' }
+      { left: 60, right: 30, top: '4%', bottom: '22%' },
+      { left: 60, right: 30, bottom: '4%', height: '14%' }
     ],
     xAxis: [
       {
@@ -74,19 +103,9 @@ function buildOption(data: KLineItem[]) {
       {
         type: 'inside',
         xAxisIndex: [0, 1],
-        start: 60,
-        end: 100
-      },
-      {
-        type: 'slider',
-        xAxisIndex: [0, 1],
-        start: 60,
-        end: 100,
-        height: 18,
-        bottom: 6,
-        borderColor: 'transparent',
-        fillerColor: 'rgba(240,185,11,0.15)',
-        textStyle: { color: '#8a909c' }
+        zoomOnMouseWheel: true,
+        moveOnMouseMove: true,
+        moveOnMouseWheel: false
       }
     ],
     series: [

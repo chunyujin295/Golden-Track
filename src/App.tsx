@@ -41,7 +41,7 @@ export default function App() {
             </span>
           </div>
           <div className="chart-wrap">
-            <KLineChart data={history} loading={loading} />
+            <KLineChart key={`${symbol}-${period}`} data={history} loading={loading} />
           </div>
         </div>
       </div>

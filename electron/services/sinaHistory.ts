@@ -1,54 +1,75 @@
 import axios from 'axios'
-import type { KLineItem, KLinePeriod } from '../../src/types'
+import type { KLineItem, KLinePeriod, SymbolKey } from '../../src/types'
 
-// 新浪期货历史日K接口（国内期货）。需 Referer，返回 jsonp: var_([{d,o,h,l,c,v,p,s},...])
-const SINA_FUTURES_URL =
+// 沪金主力（国内期货）日K接口
+const AU_URL =
   'https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var_/InnerFuturesNewService.getDailyKLine'
 
-interface SinaKLineRaw {
-  d: string
-  o: string
-  h: string
-  l: string
-  c: string
-  v: string
-  p: string
-  s: string
+// 伦敦金（COMEX 纽约黄金期货 GC，美元/盎司，走势与现货伦敦金一致）日K接口
+function gcUrl(): string {
+  const now = new Date()
+  const today = `${now.getFullYear()}_${now.getMonth() + 1}_${now.getDate()}`
+  return `https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20_S${today}=/GlobalFuturesService.getGlobalFuturesDailyKLine`
 }
 
-// 沪金历史K线：新浪仅返回日K，周/月K由日K聚合得到
-export async function fetchSinaFuturesHistory(
+const HEADERS = { Referer: 'https://finance.sina.com.cn' }
+
+// 沪金/伦敦金历史K线：新浪期货日K，周/月K由日K聚合得到
+export async function fetchSinaHistory(
+  symbol: SymbolKey,
   period: KLinePeriod
 ): Promise<KLineItem[]> {
-  const resp = await axios.get(SINA_FUTURES_URL, {
-    params: { symbol: 'AU0' },
-    headers: { Referer: 'https://finance.sina.com.cn' },
-    responseType: 'text',
-    timeout: 10000
-  })
-  const text = resp.data as string
-  const start = text.indexOf('[')
-  const end = text.lastIndexOf(']')
-  if (start < 0 || end < 0) return []
-  let raw: SinaKLineRaw[]
-  try {
-    raw = JSON.parse(text.slice(start, end + 1))
-  } catch {
-    return []
-  }
-  const daily: KLineItem[] = raw
-    .map((r): KLineItem => ({
-      time: r.d,
-      open: +r.o,
-      close: +r.c,
-      high: +r.h,
-      low: +r.l,
-      volume: +r.v || 0
-    }))
-    .sort((a, b) => (a.time < b.time ? -1 : 1))
+  const daily = symbol === 'XAU' ? await fetchGCDaily() : await fetchAUDaily()
   const recent = daily.slice(-365)
   if (period === '1d') return recent
   return aggregate(recent, period)
+}
+
+async function fetchAUDaily(): Promise<KLineItem[]> {
+  const resp = await axios.get(AU_URL, {
+    params: { symbol: 'AU0' },
+    headers: HEADERS,
+    responseType: 'text',
+    timeout: 10000
+  })
+  const raw = parseJsonp(resp.data) as Array<{
+    d: string; o: string; h: string; l: string; c: string; v: string
+  }>
+  return raw
+    .map((r): KLineItem => ({
+      time: r.d, open: +r.o, close: +r.c, high: +r.h, low: +r.l, volume: +r.v || 0
+    }))
+    .sort((a, b) => (a.time < b.time ? -1 : 1))
+}
+
+async function fetchGCDaily(): Promise<KLineItem[]> {
+  const now = new Date()
+  const today = `${now.getFullYear()}_${now.getMonth() + 1}_${now.getDate()}`
+  const resp = await axios.get(gcUrl(), {
+    params: { symbol: 'GC', _: today, source: 'web' },
+    headers: HEADERS,
+    responseType: 'text',
+    timeout: 10000
+  })
+  const raw = parseJsonp(resp.data) as Array<{
+    date: string; open: string; high: string; low: string; close: string; volume: string
+  }>
+  return raw
+    .map((r): KLineItem => ({
+      time: r.date, open: +r.open, close: +r.close, high: +r.high, low: +r.low, volume: +r.volume || 0
+    }))
+    .sort((a, b) => (a.time < b.time ? -1 : 1))
+}
+
+function parseJsonp(text: string): unknown[] {
+  const start = text.indexOf('[')
+  const end = text.lastIndexOf(']')
+  if (start < 0 || end < 0) return []
+  try {
+    return JSON.parse(text.slice(start, end + 1))
+  } catch {
+    return []
+  }
 }
 
 function aggregate(daily: KLineItem[], period: '1w' | '1m'): KLineItem[] {

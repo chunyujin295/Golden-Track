@@ -211,6 +211,11 @@ body {
   flex: 1;
   min-height: 0;
 }
+/* 修复全局 border-box 破坏 ECharts 内部元素（滑块等）像素级布局的问题 */
+.chart-wrap > div,
+.chart-wrap > div * {
+  box-sizing: content-box;
+}
 
 /* Brand table */
 .brand-panel {
